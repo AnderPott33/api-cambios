@@ -1,17 +1,21 @@
 const express = require("express");
 const puppeteer = require("puppeteer");
+const cors = require("cors"); // 1. Importamos el paquete cors
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 2. Habilitamos CORS de forma global y libre
+app.use(cors()); 
 
 // 🔹 VARIABLE GLOBAL (Nuestra Caché en memoria)
 let cacheCambios = {
     fuente: "Cambios Chaco",
     fecha: null,
-    cambios: []
+    changes: [] // Aquí se guardarán las cotizaciones mapeadas
 };
 
-// 🔹 Función que obtiene los cambios (Tu lógica exacta)
+// 🔹 Función que obtiene los cambios
 async function obtenerCambios() {
     console.log("⏳ Iniciando scrapeo en segundo plano...");
     let browser;
@@ -40,7 +44,7 @@ async function obtenerCambios() {
 
         await page.goto("https://www.cambioschaco.com.py/", {
             waitUntil: "networkidle2",
-            timeout: 60000 // 60 segundos de tiempo límite por si la web está lenta
+            timeout: 60000 // 60 segundos de tiempo límite
         });
 
         await page.waitForSelector("table");
@@ -70,7 +74,7 @@ async function obtenerCambios() {
         };
 
     } catch (error) {
-        console.error("❌ Error durante el scrapeo automático:", error.message);
+        console.error("❌ Error durante el scrapeo automático:", error);
     } finally {
         if (browser) await browser.close();
     }
@@ -85,10 +89,10 @@ const VEINTE_MINUTOS = 20 * 60 * 1000;
 setInterval(obtenerCambios, VEINTE_MINUTOS);
 
 
-// 🔹 ENDPOINT DE LA API (Ahora es instantáneo)
+// 🔹 ENDPOINT DE LA API (Ahora es instantáneo y libre)
 app.get("/cambios", (req, res) => {
     // Si la caché está vacía (por ejemplo, en el primer segundo del server)
-    if (!cacheCambios.cambios.length) {
+    if (!cacheCambios.cambios || !cacheCambios.cambios.length) {
         return res.status(503).json({ 
             error: "Servicio temporalmente no disponible, inicializando datos..." 
         });
