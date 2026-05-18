@@ -8,12 +8,11 @@ const PORT = process.env.PORT || 3000;
 async function obtenerCambios() {
     const browser = await puppeteer.launch({
         headless: true,
-        // CAMBIO CRUCIAL: Apuntar al ejecutable de Chrome instalado por el buildpack
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
+        // ELIMINAMOS executablePath para que use el por defecto de la instalación
         args: [
             "--no-sandbox", 
             "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage", // Evita problemas de memoria en servidores pequeños
+            "--disable-dev-shm-usage", 
             "--disable-gpu"
         ]
     });
