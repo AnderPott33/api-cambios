@@ -6,7 +6,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 2. Habilitamos CORS de forma global y libre
-app.use(cors()); 
+app.use(cors());
 
 // 🔹 VARIABLE GLOBAL (Nuestra Caché en memoria)
 let cacheCambios = {
@@ -23,10 +23,13 @@ async function obtenerCambios() {
         browser = await puppeteer.launch({
             headless: true,
             args: [
-                "--no-sandbox", 
+                "--no-sandbox",
                 "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage", 
-                "--disable-gpu"
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--no-first-run",
+                "--no-zygote",
+                "--single-process" // 💡 Forza a Chromium a usar un solo proceso (Ahorra mucha RAM)
             ]
         });
 
@@ -65,7 +68,7 @@ async function obtenerCambios() {
         });
 
         console.log("✅ Scrapeo exitoso. Actualizando caché.");
-        
+
         // Guardamos el resultado en la caché global
         cacheCambios = {
             fuente: "Cambios Chaco",
@@ -93,8 +96,8 @@ setInterval(obtenerCambios, VEINTE_MINUTOS);
 app.get("/cambios", (req, res) => {
     // Si la caché está vacía (por ejemplo, en el primer segundo del server)
     if (!cacheCambios.cambios || !cacheCambios.cambios.length) {
-        return res.status(503).json({ 
-            error: "Servicio temporalmente no disponible, inicializando datos..." 
+        return res.status(503).json({
+            error: "Servicio temporalmente no disponible, inicializando datos..."
         });
     }
 
