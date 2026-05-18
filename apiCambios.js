@@ -2,73 +2,100 @@ const express = require("express");
 const puppeteer = require("puppeteer");
 
 const app = express();
-// CAMBIO: Render asigna un puerto dinámico mediante variables de entorno
-const PORT = process.env.PORT || 3000; 
+const PORT = process.env.PORT || 3000;
 
+// 🔹 VARIABLE GLOBAL (Nuestra Caché en memoria)
+let cacheCambios = {
+    fuente: "Cambios Chaco",
+    fecha: null,
+    cambios: []
+};
+
+// 🔹 Función que obtiene los cambios (Tu lógica exacta)
 async function obtenerCambios() {
-    const browser = await puppeteer.launch({
-        headless: true,
-        // ELIMINAMOS executablePath para que use el por defecto de la instalación
-        args: [
-            "--no-sandbox", 
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage", 
-            "--disable-gpu"
-        ]
-    });
+    console.log("⏳ Iniciando scrapeo en segundo plano...");
+    let browser;
+    try {
+        browser = await puppeteer.launch({
+            headless: true,
+            args: [
+                "--no-sandbox", 
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage", 
+                "--disable-gpu"
+            ]
+        });
 
-    const page = await browser.newPage();
+        const page = await browser.newPage();
 
-    // Optimización: No cargar imágenes ni CSS para que el scrapeo sea más rápido y consuma menos RAM
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-        if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
-            req.abort();
-        } else {
-            req.continue();
-        }
-    });
-
-    await page.goto("https://www.cambioschaco.com.py/", {
-        waitUntil: "networkidle2"
-    });
-
-    await page.waitForSelector("table");
-
-    const cambios = await page.evaluate(() => {
-        const data = [];
-        document.querySelectorAll("table tbody tr").forEach(row => {
-            const cols = row.querySelectorAll("td");
-            if (cols.length >= 3) {
-                data.push({
-                    moneda: cols[0].innerText.trim(),
-                    compra: cols[1].innerText.trim(),
-                    venta: cols[2].innerText.trim()
-                });
+        // Bloquear peticiones innecesarias para ahorrar velocidad y RAM
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+                req.abort();
+            } else {
+                req.continue();
             }
         });
-        return data;
-    });
 
-    await browser.close();
-    return cambios;
-}
+        await page.goto("https://www.cambioschaco.com.py/", {
+            waitUntil: "networkidle2",
+            timeout: 60000 // 60 segundos de tiempo límite por si la web está lenta
+        });
 
-app.get("/cambios", async (req, res) => {
-    try {
-        const data = await obtenerCambios();
-        if (!data.length) {
-            return res.status(500).json({ error: "No se pudieron obtener los cambios" });
-        }
-        res.json({
+        await page.waitForSelector("table");
+
+        const data = await page.evaluate(() => {
+            const result = [];
+            document.querySelectorAll("table tbody tr").forEach(row => {
+                const cols = row.querySelectorAll("td");
+                if (cols.length >= 3) {
+                    result.push({
+                        moneda: cols[0].innerText.trim(),
+                        compra: cols[1].innerText.trim(),
+                        venta: cols[2].innerText.trim()
+                    });
+                }
+            });
+            return result;
+        });
+
+        console.log("✅ Scrapeo exitoso. Actualizando caché.");
+        
+        // Guardamos el resultado en la caché global
+        cacheCambios = {
             fuente: "Cambios Chaco",
             fecha: new Date(),
             cambios: data
-        });
+        };
+
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: "Error interno", detalle: error.message });
+        console.error("❌ Error durante el scrapeo automático:", error.message);
+    } finally {
+        if (browser) await browser.close();
     }
+}
+
+// 🔹 EJECUCIÓN AUTOMÁTICA
+// 1. Scrapea de inmediato apenas se levanta el servidor en Render
+obtenerCambios();
+
+// 2. Vuelve a scrapear automáticamente cada 20 minutos (1200000 ms)
+const VEINTE_MINUTOS = 20 * 60 * 1000;
+setInterval(obtenerCambios, VEINTE_MINUTOS);
+
+
+// 🔹 ENDPOINT DE LA API (Ahora es instantáneo)
+app.get("/cambios", (req, res) => {
+    // Si la caché está vacía (por ejemplo, en el primer segundo del server)
+    if (!cacheCambios.cambios.length) {
+        return res.status(503).json({ 
+            error: "Servicio temporalmente no disponible, inicializando datos..." 
+        });
+    }
+
+    // Responde inmediatamente con lo que hay en memoria
+    res.json(cacheCambios);
 });
 
 app.listen(PORT, () => {
