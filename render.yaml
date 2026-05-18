@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: api-cambios-chaco
+    env: node
+    plan: free # Puedes cambiarlo si usas un plan de pago
+    buildCommand: npm install
+    startCommand: node index.js # Cambia 'index.js' por el nombre de tu archivo principal
+    envVars:
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "true"

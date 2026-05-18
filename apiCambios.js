@@ -2,30 +2,44 @@ const express = require("express");
 const puppeteer = require("puppeteer");
 
 const app = express();
-const PORT = 3000;
+// CAMBIO: Render asigna un puerto dinámico mediante variables de entorno
+const PORT = process.env.PORT || 3000; 
 
-// 🔹 Función que obtiene los cambios
 async function obtenerCambios() {
     const browser = await puppeteer.launch({
         headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"]
+        // CAMBIO CRUCIAL: Apuntar al ejecutable de Chrome instalado por el buildpack
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome',
+        args: [
+            "--no-sandbox", 
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage", // Evita problemas de memoria en servidores pequeños
+            "--disable-gpu"
+        ]
     });
 
     const page = await browser.newPage();
+
+    // Optimización: No cargar imágenes ni CSS para que el scrapeo sea más rápido y consuma menos RAM
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+        if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+            req.abort();
+        } else {
+            req.continue();
+        }
+    });
 
     await page.goto("https://www.cambioschaco.com.py/", {
         waitUntil: "networkidle2"
     });
 
-    // Esperar que cargue la tabla (clave)
     await page.waitForSelector("table");
 
     const cambios = await page.evaluate(() => {
         const data = [];
-
         document.querySelectorAll("table tbody tr").forEach(row => {
             const cols = row.querySelectorAll("td");
-
             if (cols.length >= 3) {
                 data.push({
                     moneda: cols[0].innerText.trim(),
@@ -34,43 +48,30 @@ async function obtenerCambios() {
                 });
             }
         });
-
         return data;
     });
 
     await browser.close();
-
     return cambios;
 }
 
-// 🔹 Endpoint API
 app.get("/cambios", async (req, res) => {
     try {
         const data = await obtenerCambios();
-
         if (!data.length) {
-            return res.status(500).json({
-                error: "No se pudieron obtener los cambios"
-            });
+            return res.status(500).json({ error: "No se pudieron obtener los cambios" });
         }
-
         res.json({
             fuente: "Cambios Chaco",
             fecha: new Date(),
             cambios: data
         });
-
     } catch (error) {
         console.error(error);
-
-        res.status(500).json({
-            error: "Error interno",
-            detalle: error.message
-        });
+        res.status(500).json({ error: "Error interno", detalle: error.message });
     }
 });
 
-// 🔹 Levantar servidor
 app.listen(PORT, () => {
-    console.log(`🚀 API corriendo en http://localhost:${PORT}`);
+    console.log(`🚀 API corriendo en el puerto ${PORT}`);
 });
