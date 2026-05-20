@@ -1,24 +1,26 @@
 const express = require("express");
 const puppeteer = require("puppeteer");
-const cors = require("cors"); // 1. Importamos el paquete cors
+const cors = require("cors");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 2. Habilitamos CORS de forma global y libre
 app.use(cors());
 
-// 🔹 VARIABLE GLOBAL (Nuestra Caché en memoria)
+// 🔹 CACHÉ EN MEMORIA (Nombres unificados en español)
 let cacheCambios = {
     fuente: "Cambios Chaco",
     fecha: null,
-    changes: [] // Aquí se guardarán las cotizaciones mapeadas
+    cambios: [] 
 };
 
-// 🔹 Función que obtiene los cambios
+// Variable para saber si el primer scrapeo ya tuvo éxito
+let primerScrapeoExitoso = false;
+
 async function obtenerCambios() {
     console.log("⏳ Iniciando scrapeo en segundo plano...");
-    let browser;
+    let browser = null;
+    
     try {
         browser = await puppeteer.launch({
             headless: true,
@@ -26,31 +28,32 @@ async function obtenerCambios() {
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-gpu",
+                "--disable-accelerated-2d-canvas",
                 "--no-first-run",
-                "--no-zygote",
-                "--single-process" // 💡 Forza a Chromium a usar un solo proceso (Ahorra mucha RAM)
+                "--no-zygote"
+                // ❌ Eliminamos --single-process para evitar fugas de RAM en Render
             ]
         });
 
         const page = await browser.newPage();
 
-        // Bloquear peticiones innecesarias para ahorrar velocidad y RAM
+        // Bloquear recursos innecesarios (Imágenes, estilos, fuentes)
         await page.setRequestInterception(true);
         page.on('request', (req) => {
-            if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+            if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
                 req.abort();
             } else {
                 req.continue();
             }
         });
 
+        // Timeout prudencial para no congelar el proceso si la web cae
         await page.goto("https://www.cambioschaco.com.py/", {
             waitUntil: "networkidle2",
-            timeout: 60000 // 60 segundos de tiempo límite
+            timeout: 45000 
         });
 
-        await page.waitForSelector("table");
+        await page.waitForSelector("table", { timeout: 15000 });
 
         const data = await page.evaluate(() => {
             const result = [];
@@ -67,41 +70,50 @@ async function obtenerCambios() {
             return result;
         });
 
-        console.log("✅ Scrapeo exitoso. Actualizando caché.");
-
-        // Guardamos el resultado en la caché global
+        // Guardamos en la caché global de inmediato
         cacheCambios = {
             fuente: "Cambios Chaco",
             fecha: new Date(),
             cambios: data
         };
+        
+        primerScrapeoExitoso = true;
+        console.log(`✅ Caché actualizada con éxito a las: ${cacheCambios.fecha.toLocaleTimeString()}`);
 
     } catch (error) {
-        console.error("❌ Error durante el scrapeo automático:", error);
+        console.error("❌ Error durante el scrapeo automático:", error.message);
     } finally {
-        if (browser) await browser.close();
+        // Garantizamos que el navegador se cierre SIEMPRE para liberar la RAM
+        if (browser !== null) {
+            try {
+                await browser.close();
+                console.log("🔒 Navegador Chromium cerrado correctamente.");
+            } catch (err) {
+                console.error("❌ Error al cerrar el navegador:", err.message);
+            }
+        }
     }
 }
 
-// 🔹 EJECUCIÓN AUTOMÁTICA
-// 1. Scrapea de inmediato apenas se levanta el servidor en Render
+// 🔹 EJECUCIÓN AUTOMÁTICA EN SEGUNDO PLANO
+// Se ejecuta inmediatamente al levantar el servidor
 obtenerCambios();
 
-// 2. Vuelve a scrapear automáticamente cada 20 minutos (1200000 ms)
+// Se repite cada 20 minutos de forma exacta
 const VEINTE_MINUTOS = 20 * 60 * 1000;
 setInterval(obtenerCambios, VEINTE_MINUTOS);
 
 
-// 🔹 ENDPOINT DE LA API (Ahora es instantáneo y libre)
+// 🔹 ENDPOINT DE LA API (Instantáneo)
 app.get("/cambios", (req, res) => {
-    // Si la caché está vacía (por ejemplo, en el primer segundo del server)
-    if (!cacheCambios.cambios || !cacheCambios.cambios.length) {
+    // Si aún no se completó el primer scrapeo desde que inició el server
+    if (!primerScrapeoExitoso) {
         return res.status(503).json({
-            error: "Servicio temporalmente no disponible, inicializando datos..."
+            error: "Servicio temporalmente no disponible, inicializando datos por primera vez..."
         });
     }
 
-    // Responde inmediatamente con lo que hay en memoria
+    // Respuesta en milisegundos directamente desde la RAM
     res.json(cacheCambios);
 });
 
