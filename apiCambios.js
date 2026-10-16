@@ -52,7 +52,13 @@ async function obtenerCambios() {
             waitUntil: "networkidle2",
             timeout: 45000 
         });
-
+console.log("URL:", page.url());
+console.log("Título:", await page.title());
+console.log("Tabelas:", await page.locator("table").count());
+console.log(
+  "Conteúdo:",
+  (await page.locator("body").innerText()).slice(0, 3000)
+);
         await page.waitForSelector("table", { timeout: 15000 });
 
         const data = await page.evaluate(() => {
