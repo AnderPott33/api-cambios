@@ -49,9 +49,9 @@ async function obtenerCambios() {
 
         // Timeout prudencial para no congelar el proceso si la web cae
         await page.goto("https://www.cambioschaco.com.py/", {
-            waitUntil: "networkidle2",
-            timeout: 45000 
-        });
+    waitUntil: "domcontentloaded",
+    timeout: 45000
+});
 console.log("URL:", page.url());
 console.log("Título:", await page.title());
 console.log("Tabelas:", await page.locator("table").count());
